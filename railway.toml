@@ -1,8 +1,11 @@
+# Default = daily cron. For two Railway services use:
+#   daily-report  -> /railway.daily.toml
+#   query-bot     -> /railway.bot.toml
+
 [build]
 builder = "NIXPACKS"
 
 [deploy]
 startCommand = "python main.py"
-# 08:00 HKT = 00:00 UTC（每日）
 cronSchedule = "0 0 * * *"
 restartPolicyType = "NEVER"

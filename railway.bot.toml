@@ -1,0 +1,10 @@
+# Interactive query bot (long-polling, always on)
+# Railway Config-as-Code path: /railway.bot.toml
+
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "python bot_server.py"
+# No cron — must stay running to receive messages
+restartPolicyType = "ON_FAILURE"

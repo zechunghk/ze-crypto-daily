@@ -1,0 +1,11 @@
+# Daily report cron service
+# Railway Config-as-Code path: /railway.daily.toml
+
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "python main.py"
+# 08:00 HKT = 00:00 UTC
+cronSchedule = "0 0 * * *"
+restartPolicyType = "NEVER"
