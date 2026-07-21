@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
 from analysis import BtcPlan, TradeSetup
+from holdings import HoldingReport
 
 HKT = timezone(timedelta(hours=8))
 
@@ -27,11 +28,28 @@ def _format_setup(index: int, setup: TradeSetup) -> str:
     )
 
 
+def _format_holding(report: HoldingReport) -> str:
+    news_lines = "\n".join(f"   - {headline}" for headline in report.news)
+    return (
+        f"{report.name} ({report.pair})\n"
+        f"   现价: {_fmt_price(report.last_price)} | "
+        f"1D {report.perf_1d:+.1f}% | 7D {report.perf_7d:+.1f}% | "
+        f"vs BTC 7D {report.rs_7d:+.1f}%\n"
+        f"   趋势: 1D {report.trend_1d} / 4H {report.trend_4h}\n"
+        f"   短期展望: {report.outlook}\n"
+        f"   操作建议: {report.action}\n"
+        f"   1-3日预测: {report.prediction}\n"
+        f"   关键位: {report.watch_levels}\n"
+        f"   相关新闻:\n{news_lines}"
+    )
+
+
 def build_daily_report(
     market_bias: str,
     btc_plan: BtcPlan,
     long_setups: list[TradeSetup],
     short_setups: list[TradeSetup],
+    holdings: list[HoldingReport] | None = None,
 ) -> str:
     now = datetime.now(HKT).strftime("%Y-%m-%d %H:%M HKT")
 
@@ -95,7 +113,24 @@ def build_daily_report(
     lines.extend(
         [
             "",
-            "風險提示: 以上為量化篩選結果，唔係投資建議。",
+            "--------------------------------",
+            "[4] 持仓监控 (AVAX / DYDX / TAO)",
+            "--------------------------------",
+        ]
+    )
+
+    if holdings:
+        for index, holding in enumerate(holdings, start=1):
+            lines.append(_format_holding(holding))
+            if index < len(holdings):
+                lines.append("")
+    else:
+        lines.append("暂时无法获取持仓数据。")
+
+    lines.extend(
+        [
+            "",
+            "风险提示: 以上為量化篩選結果，唔係投資建議。",
             "入場前請用 TradingView 4H/1D 圖再確認。",
         ]
     )

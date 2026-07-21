@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from analysis import build_btc_plan, build_trend_setup, pick_top_setups
 from binance_client import get_klines, get_klines_batch, get_usdt_pairs
+from holdings import HOLDINGS, build_all_holding_reports
 from report import build_daily_report
 from telegram_bot import send_telegram_message
 
@@ -54,8 +55,11 @@ def main() -> int:
     btc_perf_7d = pct_change_over(candles_to_frame(btc_daily)["close"], 7)
 
     print(f"Scanning {len(symbols)} pairs (1D + 4H)...")
-    daily_map = get_klines_batch(symbols, "1d", 120)
-    h4_map = get_klines_batch(symbols, "4h", 120)
+    holding_symbols = [item["symbol"] for item in HOLDINGS]
+    all_symbols = list(dict.fromkeys(symbols + holding_symbols))
+
+    daily_map = get_klines_batch(all_symbols, "1d", 120)
+    h4_map = get_klines_batch(all_symbols, "4h", 120)
 
     long_setups = []
     short_setups = []
@@ -81,7 +85,12 @@ def main() -> int:
     top_short = pick_top_setups(short_setups, "SHORT", TOP_N_REPORT)
     market_bias = derive_market_bias(btc_plan)
 
-    report = build_daily_report(market_bias, btc_plan, top_long, top_short)
+    print("Analyzing holdings (AVAX, DYDX, TAO)...")
+    holdings = build_all_holding_reports(btc_perf_7d, daily_map, h4_map)
+
+    report = build_daily_report(
+        market_bias, btc_plan, top_long, top_short, holdings=holdings
+    )
 
     if dry_run:
         print(report)
