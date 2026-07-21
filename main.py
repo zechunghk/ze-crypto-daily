@@ -13,7 +13,7 @@ from binance_client import get_klines, get_klines_batch, get_usdt_pairs
 from report import build_daily_report
 from telegram_bot import send_telegram_message
 
-TOP_N_SCAN = 60
+TOP_N_SCAN = 200
 TOP_N_REPORT = 5
 
 
@@ -88,7 +88,12 @@ def main() -> int:
         return 0
 
     print("Sending Telegram message...")
-    send_telegram_message(token, chat_id, report)
+    try:
+        send_telegram_message(token, chat_id, report)
+    except RuntimeError as error:
+        print(str(error))
+        print("Hint: confirm TELEGRAM_CHAT_ID is correct and you pressed Start on the bot.")
+        return 1
     print("Done.")
     return 0
 

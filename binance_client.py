@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import requests
@@ -83,10 +83,17 @@ def get_klines_batch(
     symbols: list[str],
     interval: str,
     limit: int = 120,
-    pause_seconds: float = 0.08,
+    max_workers: int = 8,
 ) -> dict[str, list[dict[str, float]]]:
     result: dict[str, list[dict[str, float]]] = {}
-    for symbol in symbols:
-        result[symbol] = get_klines(symbol, interval, limit)
-        time.sleep(pause_seconds)
+
+    def fetch(symbol: str) -> tuple[str, list[dict[str, float]]]:
+        return symbol, get_klines(symbol, interval, limit)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(fetch, symbol) for symbol in symbols]
+        for future in as_completed(futures):
+            symbol, candles = future.result()
+            result[symbol] = candles
+
     return result
