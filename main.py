@@ -20,10 +20,10 @@ TOP_N_REPORT = 5
 
 def derive_market_bias(btc_plan) -> str:
     if "偏多" in btc_plan.bias:
-        return "今日偏向做多 (LONG)，弱勢幣可觀望或小倉做空"
+        return "今日适合做多（LONG）；弱勢幣只觀望，唔好追空"
     if "偏空" in btc_plan.bias:
-        return "今日偏向做空 (SHORT) 或減倉，強勢幣只做短線"
-    return "今日偏向觀望 / 區間交易，唔好重倉追單"
+        return "今日适合做空（SHORT）；強勢幣唔好做多追，先等回落"
+    return "今日适合观望 / 区间交易；唔好重倉追单"
 
 
 def main() -> int:

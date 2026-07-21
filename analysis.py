@@ -75,7 +75,19 @@ def build_trend_setup(
 
     recent_high = float(h4["high"].tail(20).max())
     recent_low = float(h4["low"].tail(20).min())
-    swing_buffer = last * 0.02
+    # ATR(14) — 用於自適應止損/止盈距離（不同幣波動不同）
+    prev_close = h4["close"].shift(1)
+    tr_1 = (h4["high"] - h4["low"]).abs()
+    tr_2 = (h4["high"] - prev_close).abs()
+    tr_3 = (h4["low"] - prev_close).abs()
+    h4_tr = pd.concat([tr_1, tr_2, tr_3], axis=1).max(axis=1)
+    atr14 = float(h4_tr.rolling(14).mean().iloc[-1])
+    if not np.isfinite(atr14) or atr14 <= 0:
+        return None
+
+    # 止損距離（以 ATR 計算），止盈按固定 R:R 倍數
+    atr_sl_mult = 1.5
+    sl_distance = atr14 * atr_sl_mult
 
     reasons: list[str] = []
     score = 0.0
@@ -101,14 +113,17 @@ def build_trend_setup(
             return None
 
         entry = round(h_ema20, 6)
-        stop_loss = round(min(h_ema50, recent_low) - swing_buffer, 6)
+        stop_loss = round(entry - sl_distance, 6)
         if stop_loss <= 0 or stop_loss >= entry:
             stop_loss = round(entry * 0.97, 6)
         risk = entry - stop_loss
         if risk <= 0:
             return None
         take_profit_1 = round(entry + risk * 2, 6)
-        take_profit_2 = round(max(entry + risk * 3, recent_high * 0.98), 6)
+        # 用近高做上限，避免極端數字（仍以 ATR 距離為主）
+        take_profit_2 = round(min(entry + risk * 3, recent_high * 1.02), 6)
+        # 確保 TP2 >= TP1（做多情况下止盈應至少唔差於 TP1）
+        take_profit_2 = round(max(take_profit_2, take_profit_1), 6)
     else:
         if d_close < d_ema20 < d_ema50:
             score += 25
@@ -130,14 +145,16 @@ def build_trend_setup(
             return None
 
         entry = round(h_ema20, 6)
-        stop_loss = round(max(h_ema50, recent_high) + swing_buffer, 6)
+        stop_loss = round(entry + sl_distance, 6)
         if stop_loss <= entry:
             stop_loss = round(entry * 1.03, 6)
         risk = stop_loss - entry
         if risk <= 0:
             return None
         take_profit_1 = round(entry - risk * 2, 6)
-        take_profit_2 = round(max(entry - risk * 3, recent_low * 1.02), 6)
+        take_profit_2 = round(max(entry - risk * 3, recent_low * 0.98), 6)
+        # 確保 TP2 <= TP1（做空情况下止盈應至少唔差於 TP1）
+        take_profit_2 = round(min(take_profit_2, take_profit_1), 6)
         if take_profit_1 <= 0:
             take_profit_1 = round(entry * 0.95, 6)
         if take_profit_2 <= 0:
