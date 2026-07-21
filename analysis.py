@@ -112,18 +112,18 @@ def build_trend_setup(
         if score < 35:
             return None
 
-        entry = round(h_ema20, 6)
-        stop_loss = round(entry - sl_distance, 6)
+        entry = round(h_ema20, 4)
+        stop_loss = round(entry - sl_distance, 4)
         if stop_loss <= 0 or stop_loss >= entry:
-            stop_loss = round(entry * 0.97, 6)
+            stop_loss = round(entry * 0.97, 4)
         risk = entry - stop_loss
         if risk <= 0:
             return None
-        take_profit_1 = round(entry + risk * 2, 6)
+        take_profit_1 = round(entry + risk * 2, 4)
         # 用近高做上限，避免極端數字（仍以 ATR 距離為主）
-        take_profit_2 = round(min(entry + risk * 3, recent_high * 1.02), 6)
+        take_profit_2 = round(min(entry + risk * 3, recent_high * 1.02), 4)
         # 確保 TP2 >= TP1（做多情况下止盈應至少唔差於 TP1）
-        take_profit_2 = round(max(take_profit_2, take_profit_1), 6)
+        take_profit_2 = round(max(take_profit_2, take_profit_1), 4)
     else:
         if d_close < d_ema20 < d_ema50:
             score += 25
@@ -144,21 +144,21 @@ def build_trend_setup(
         if score < 35:
             return None
 
-        entry = round(h_ema20, 6)
-        stop_loss = round(entry + sl_distance, 6)
+        entry = round(h_ema20, 4)
+        stop_loss = round(entry + sl_distance, 4)
         if stop_loss <= entry:
-            stop_loss = round(entry * 1.03, 6)
+            stop_loss = round(entry * 1.03, 4)
         risk = stop_loss - entry
         if risk <= 0:
             return None
-        take_profit_1 = round(entry - risk * 2, 6)
-        take_profit_2 = round(max(entry - risk * 3, recent_low * 0.98), 6)
+        take_profit_1 = round(entry - risk * 2, 4)
+        take_profit_2 = round(max(entry - risk * 3, recent_low * 0.98), 4)
         # 確保 TP2 <= TP1（做空情况下止盈應至少唔差於 TP1）
-        take_profit_2 = round(min(take_profit_2, take_profit_1), 6)
+        take_profit_2 = round(min(take_profit_2, take_profit_1), 4)
         if take_profit_1 <= 0:
-            take_profit_1 = round(entry * 0.95, 6)
+            take_profit_1 = round(entry * 0.95, 4)
         if take_profit_2 <= 0:
-            take_profit_2 = round(entry * 0.90, 6)
+            take_profit_2 = round(entry * 0.90, 4)
 
     risk_reward = 2.0 if risk > 0 else 0.0
 
@@ -167,7 +167,7 @@ def build_trend_setup(
         pair=pair,
         score=round(score, 1),
         direction=direction,
-        last_price=round(last, 6),
+        last_price=round(last, 4),
         entry=entry,
         stop_loss=stop_loss,
         take_profit_1=take_profit_1,

@@ -14,16 +14,29 @@ def _fmt_price(value: float) -> str:
         return f"{value:,.2f}"
     if value >= 1:
         return f"{value:,.4f}"
-    return f"{value:.6f}"
+    return f"{value:.4f}"
 
 
 def _format_setup(index: int, setup: TradeSetup) -> str:
     reason_text = "；".join(setup.reasons)
+
+    def _pct_from_entry(entry: float, price: float, direction: str) -> float:
+        # LONG：price 相对入场的涨跌百分比
+        # SHORT：用 (entry - price)/entry，让 TP 为正、SL 为负
+        if direction == "LONG":
+            return ((price - entry) / entry) * 100.0
+        return ((entry - price) / entry) * 100.0
+
+    sl_pct = _pct_from_entry(setup.entry, setup.stop_loss, setup.direction)
+    tp1_pct = _pct_from_entry(setup.entry, setup.take_profit_1, setup.direction)
+    tp2_pct = _pct_from_entry(setup.entry, setup.take_profit_2, setup.direction)
+
     return (
         f"{index}. {setup.pair}（強度 {setup.score}/100）\n"
         f"   現價: {_fmt_price(setup.last_price)}\n"
-        f"   入場: {_fmt_price(setup.entry)} | SL: {_fmt_price(setup.stop_loss)}\n"
-        f"   TP1: {_fmt_price(setup.take_profit_1)} | TP2: {_fmt_price(setup.take_profit_2)}\n"
+        f"   入場: {_fmt_price(setup.entry)}\n"
+        f"   SL: {_fmt_price(setup.stop_loss)} ({sl_pct:+.2f}%)\n"
+        f"   TP1: {_fmt_price(setup.take_profit_1)} ({tp1_pct:+.2f}%) | TP2: {_fmt_price(setup.take_profit_2)} ({tp2_pct:+.2f}%)\n"
         f"   理由: {reason_text}"
     )
 
