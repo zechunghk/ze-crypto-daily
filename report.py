@@ -44,16 +44,23 @@ def _format_setup(index: int, setup: TradeSetup) -> str:
 def _format_holding(report: HoldingReport) -> str:
     news_lines = "\n".join(f"   - {headline}" for headline in report.news)
     position_line = ""
-    if report.entry_price is not None:
+    if report.entry_price is not None and report.quantity is not None:
+        pnl_pct = ((report.last_price - report.entry_price) / report.entry_price) * 100.0
+        cost_basis = report.quantity * report.entry_price
+        current_value = report.quantity * report.last_price
+        pnl_usdt = current_value - cost_basis
+        qty_label = f"{report.quantity:g}"
+        position_line = (
+            f"   持仓: {qty_label} {report.name} @ 入场 {_fmt_price(report.entry_price)}"
+            f" | 现值 ${current_value:,.2f}"
+            f" | 浮盈 {pnl_pct:+.2f}% (${pnl_usdt:+,.2f})\n"
+        )
+    elif report.entry_price is not None:
         pnl_pct = ((report.last_price - report.entry_price) / report.entry_price) * 100.0
         position_line = (
             f"   持仓: 入场 {_fmt_price(report.entry_price)}"
-            f" | 浮盈 {pnl_pct:+.2f}%"
+            f" | 浮盈 {pnl_pct:+.2f}%\n"
         )
-        if report.cost_usdt is not None:
-            pnl_usdt = report.cost_usdt * (report.last_price / report.entry_price - 1)
-            position_line += f" (${pnl_usdt:+.2f} / ${report.cost_usdt:.0f})"
-        position_line += "\n"
 
     return (
         f"{report.name} ({report.pair})\n"

@@ -17,7 +17,7 @@ HOLDINGS = [
         "name": "AVAX",
         "news_query": "Avalanche AVAX cryptocurrency",
         "entry_price": 18.49,
-        "cost_usdt": 150.0,
+        "quantity": 150.0,
     },
     {
         "symbol": "INJUSDT",
@@ -25,7 +25,7 @@ HOLDINGS = [
         "name": "INJ",
         "news_query": "Injective INJ cryptocurrency",
         "entry_price": 5.5,
-        "cost_usdt": 77.0,
+        "quantity": 77.0,
     },
     {
         "symbol": "TAOUSDT",
@@ -33,7 +33,7 @@ HOLDINGS = [
         "name": "TAO",
         "news_query": "Bittensor TAO cryptocurrency",
         "entry_price": 189.79,
-        "cost_usdt": 379.58,
+        "quantity": 2.0,
     },
 ]
 
@@ -60,7 +60,7 @@ class HoldingReport:
     watch_levels: str
     news: list[str]
     entry_price: float | None = None
-    cost_usdt: float | None = None
+    quantity: float | None = None
 
 
 def _trend_label(close: float, ema20: float, ema50: float) -> str:
@@ -209,7 +209,7 @@ def build_all_holding_reports(
         )
         if report:
             report.entry_price = holding.get("entry_price")
-            report.cost_usdt = holding.get("cost_usdt")
+            report.quantity = holding.get("quantity")
             reports.append(report)
     return reports
 
