@@ -43,8 +43,21 @@ def _format_setup(index: int, setup: TradeSetup) -> str:
 
 def _format_holding(report: HoldingReport) -> str:
     news_lines = "\n".join(f"   - {headline}" for headline in report.news)
+    position_line = ""
+    if report.entry_price is not None:
+        pnl_pct = ((report.last_price - report.entry_price) / report.entry_price) * 100.0
+        position_line = (
+            f"   持仓: 入场 {_fmt_price(report.entry_price)}"
+            f" | 浮盈 {pnl_pct:+.2f}%"
+        )
+        if report.cost_usdt is not None:
+            pnl_usdt = report.cost_usdt * (report.last_price / report.entry_price - 1)
+            position_line += f" (${pnl_usdt:+.2f} / ${report.cost_usdt:.0f})"
+        position_line += "\n"
+
     return (
         f"{report.name} ({report.pair})\n"
+        f"{position_line}"
         f"   现价: {_fmt_price(report.last_price)} | "
         f"1D {report.perf_1d:+.1f}% | 7D {report.perf_7d:+.1f}% | "
         f"vs BTC 7D {report.rs_7d:+.1f}%\n"
@@ -127,7 +140,7 @@ def build_daily_report(
         [
             "",
             "--------------------------------",
-            "[4] 持仓监控 (AVAX / DYDX / TAO)",
+            "[4] 持仓监控 (AVAX / INJ / TAO)",
             "--------------------------------",
         ]
     )

@@ -18,10 +18,12 @@ HOLDINGS = [
         "news_query": "Avalanche AVAX cryptocurrency",
     },
     {
-        "symbol": "DYDXUSDT",
-        "pair": "DYDX/USDT",
-        "name": "DYDX",
-        "news_query": "dYdX DYDX cryptocurrency",
+        "symbol": "INJUSDT",
+        "pair": "INJ/USDT",
+        "name": "INJ",
+        "news_query": "Injective INJ cryptocurrency",
+        "entry_price": 5.5,
+        "cost_usdt": 77.0,
     },
     {
         "symbol": "TAOUSDT",
@@ -53,6 +55,8 @@ class HoldingReport:
     prediction: str
     watch_levels: str
     news: list[str]
+    entry_price: float | None = None
+    cost_usdt: float | None = None
 
 
 def _trend_label(close: float, ema20: float, ema50: float) -> str:
@@ -200,6 +204,8 @@ def build_all_holding_reports(
             btc_perf_7d=btc_perf_7d,
         )
         if report:
+            report.entry_price = holding.get("entry_price")
+            report.cost_usdt = holding.get("cost_usdt")
             reports.append(report)
     return reports
 

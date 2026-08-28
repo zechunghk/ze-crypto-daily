@@ -85,7 +85,7 @@ def main() -> int:
     top_short = pick_top_setups(short_setups, "SHORT", TOP_N_REPORT)
     market_bias = derive_market_bias(btc_plan)
 
-    print("Analyzing holdings (AVAX, DYDX, TAO)...")
+    print("Analyzing holdings (AVAX, INJ, TAO)...")
     holdings = build_all_holding_reports(btc_perf_7d, daily_map, h4_map)
 
     report = build_daily_report(
