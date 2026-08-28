@@ -16,6 +16,8 @@ HOLDINGS = [
         "pair": "AVAX/USDT",
         "name": "AVAX",
         "news_query": "Avalanche AVAX cryptocurrency",
+        "entry_price": 18.49,
+        "cost_usdt": 150.0,
     },
     {
         "symbol": "INJUSDT",
@@ -30,6 +32,8 @@ HOLDINGS = [
         "pair": "TAO/USDT",
         "name": "TAO",
         "news_query": "Bittensor TAO cryptocurrency",
+        "entry_price": 189.79,
+        "cost_usdt": 379.58,
     },
 ]
 
