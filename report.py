@@ -43,8 +43,28 @@ def _format_setup(index: int, setup: TradeSetup) -> str:
 
 def _format_holding(report: HoldingReport) -> str:
     news_lines = "\n".join(f"   - {headline}" for headline in report.news)
+    position_line = ""
+    if report.entry_price is not None and report.quantity is not None:
+        pnl_pct = ((report.last_price - report.entry_price) / report.entry_price) * 100.0
+        cost_basis = report.quantity * report.entry_price
+        current_value = report.quantity * report.last_price
+        pnl_usdt = current_value - cost_basis
+        qty_label = f"{report.quantity:g}"
+        position_line = (
+            f"   持仓: {qty_label} {report.name} @ 入场 {_fmt_price(report.entry_price)}"
+            f" | 现值 ${current_value:,.2f}"
+            f" | 浮盈 {pnl_pct:+.2f}% (${pnl_usdt:+,.2f})\n"
+        )
+    elif report.entry_price is not None:
+        pnl_pct = ((report.last_price - report.entry_price) / report.entry_price) * 100.0
+        position_line = (
+            f"   持仓: 入场 {_fmt_price(report.entry_price)}"
+            f" | 浮盈 {pnl_pct:+.2f}%\n"
+        )
+
     return (
         f"{report.name} ({report.pair})\n"
+        f"{position_line}"
         f"   现价: {_fmt_price(report.last_price)} | "
         f"1D {report.perf_1d:+.1f}% | 7D {report.perf_7d:+.1f}% | "
         f"vs BTC 7D {report.rs_7d:+.1f}%\n"
@@ -127,7 +147,7 @@ def build_daily_report(
         [
             "",
             "--------------------------------",
-            "[4] 持仓监控 (AVAX / DYDX / TAO)",
+            "[4] 持仓监控 (AVAX / INJ / TAO)",
             "--------------------------------",
         ]
     )
