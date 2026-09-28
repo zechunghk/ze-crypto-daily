@@ -1,6 +1,7 @@
-# Default = daily cron. For two Railway services use:
+# Default = daily cron. For Railway services use:
 #   daily-report  -> /railway.daily.toml
 #   query-bot     -> /railway.bot.toml
+#   rsi-alert     -> /railway.rsi.toml
 
 [build]
 builder = "NIXPACKS"

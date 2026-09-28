@@ -11,7 +11,7 @@ import requests
 from dotenv import load_dotenv
 
 from telegram_bot import send_telegram_message
-from telegram_handler import handle_text_message, is_chat_allowed
+from telegram_handler import handle_text_message, is_chat_allowed, parse_rsi_mode
 
 TELEGRAM_UPDATES_API = "https://api.telegram.org/bot{token}/getUpdates"
 
@@ -60,6 +60,12 @@ def main() -> int:
 
                 print(f"Query from {chat_id}: {text}")
                 try:
+                    if parse_rsi_mode(text):
+                        send_telegram_message(
+                            token,
+                            str(chat_id),
+                            "掃描緊 RSI 名單，大約要十幾秒。",
+                        )
                     reply = handle_text_message(text)
                     send_telegram_message(token, str(chat_id), reply)
                 except Exception as error:
