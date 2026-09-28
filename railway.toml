@@ -1,12 +1,8 @@
-# Default = daily cron. For Railway services use:
-#   daily-report  -> /railway.daily.toml
-#   query-bot     -> /railway.bot.toml
-#   rsi-alert     -> /railway.rsi.toml
+# Root file is only a fallback build config.
+# Per-service settings live in Railway dashboard / legacy CaC paths:
+#   ze-crypto-daily   -> /railway.daily.toml
+#   glistening-balance -> /railway.bot.toml
+#   rsi-alert         -> dashboard startCommand + cron (new services cannot use CaC)
 
 [build]
 builder = "NIXPACKS"
-
-[deploy]
-startCommand = "python main.py"
-cronSchedule = "0 0 * * *"
-restartPolicyType = "NEVER"
