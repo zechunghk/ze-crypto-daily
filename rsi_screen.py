@@ -43,6 +43,9 @@ class LongPlan:
     take_profit_1: float
     take_profit_2: float
     wait_pullback: bool
+    risk_reward: float
+    risk_pct: float
+    reward_pct: float
 
 
 @dataclass(frozen=True)
@@ -232,11 +235,10 @@ def build_long_plan(
     last_price: float,
     second_signal: bool,
     max_risk_pct: float = 0.08,
+    min_rr: float = 2.0,
+    target_rr: float = 2.2,
 ) -> LongPlan | None:
-    """做多參考位。第二次訊號用現價；否則等回拉到 EMA20。
-
-    SL 跟最近回拉低位。低位太近就改用 1.5 ATR，太遠就收窄到 3 ATR，再唔好過 max_risk_pct。
-    """
+    """做多參考位。只喺 R/R > min_rr 先建議；唔夠就重算 TP／SL。"""
     if len(level_candles) < 26 or last_price <= 0:
         return None
     closes = [candle.close for candle in level_candles]
@@ -269,18 +271,43 @@ def build_long_plan(
     if risk <= 0:
         return None
 
-    take_profit_1 = entry + risk * 2
-    take_profit_2 = entry + risk * 3
+    take_profit_1 = entry + risk * target_rr
+    take_profit_2 = entry + risk * max(target_rr + 1.0, 3.0)
     if recent_high > entry:
-        take_profit_2 = min(take_profit_2, recent_high * 1.02)
+        take_profit_2 = max(take_profit_1, min(take_profit_2, recent_high * 1.02))
     if take_profit_2 < take_profit_1:
         take_profit_2 = take_profit_1
+
+    reward = take_profit_1 - entry
+    risk_reward = reward / risk if risk > 0 else 0.0
+    if risk_reward <= min_rr:
+        needed_risk = reward / target_rr if reward > 0 else risk
+        tighter = entry - needed_risk
+        if tighter <= stop_loss or tighter >= entry:
+            return None
+        if tighter < risk_floor:
+            take_profit_1 = entry + risk * target_rr
+            take_profit_2 = max(take_profit_1, entry + risk * (target_rr + 1.0))
+        else:
+            stop_loss = tighter
+            risk = entry - stop_loss
+            take_profit_1 = entry + risk * target_rr
+            take_profit_2 = entry + risk * max(target_rr + 1.0, 3.0)
+        reward = take_profit_1 - entry
+        risk_reward = reward / risk if risk > 0 else 0.0
+
+    if risk <= 0 or risk_reward <= min_rr:
+        return None
+
     return LongPlan(
         entry=entry,
         stop_loss=stop_loss,
         take_profit_1=take_profit_1,
         take_profit_2=take_profit_2,
         wait_pullback=wait_pullback,
+        risk_reward=round(risk_reward, 2),
+        risk_pct=round((risk / entry) * 100.0, 2),
+        reward_pct=round((reward / entry) * 100.0, 2),
     )
 
 
@@ -548,7 +575,8 @@ def _plan_lines(plan: LongPlan) -> str:
         f"   {label}: {format_price(plan.entry)}\n"
         f"   SL: {format_price(plan.stop_loss)} ({_pct(plan.entry, plan.stop_loss):+.2f}%)\n"
         f"   TP1: {format_price(plan.take_profit_1)} ({_pct(plan.entry, plan.take_profit_1):+.2f}%) | "
-        f"TP2: {format_price(plan.take_profit_2)} ({_pct(plan.entry, plan.take_profit_2):+.2f}%)"
+        f"TP2: {format_price(plan.take_profit_2)} ({_pct(plan.entry, plan.take_profit_2):+.2f}%)\n"
+        f"   R/R {plan.risk_reward} · 風險 {plan.risk_pct}% · 目標 +{plan.reward_pct}%"
     )
 
 
@@ -649,11 +677,13 @@ def self_test() -> None:
     assert chased is not None
     assert chased.wait_pullback
     assert chased.stop_loss < chased.entry < chased.take_profit_1 <= chased.take_profit_2
+    assert chased.risk_reward > 2.0
     signal = build_long_plan(rising_candles, rising_candles[-1].close, True)
     assert signal is not None
     assert not signal.wait_pullback
     assert signal.entry == rising_candles[-1].close
     assert signal.stop_loss < signal.entry
+    assert signal.risk_reward > 2.0
     print("self-test ok")
 
 
