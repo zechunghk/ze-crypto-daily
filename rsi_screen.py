@@ -46,6 +46,10 @@ class LongPlan:
     risk_reward: float
     risk_pct: float
     reward_pct: float
+    tp1_basis: str = ""
+    tp2_basis: str = ""
+    risk_reward_2: float = 0.0
+    reward_pct_2: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -238,7 +242,7 @@ def build_long_plan(
     min_rr: float = 2.0,
     target_rr: float = 2.2,
 ) -> LongPlan | None:
-    """做多參考位。只喺 R/R > min_rr 先建議；唔夠就重算 TP／SL。"""
+    """做多參考位。TP 優先結構／Fib／ATR；R/R 必須 > min_rr。"""
     if len(level_candles) < 26 or last_price <= 0:
         return None
     closes = [candle.close for candle in level_candles]
@@ -253,7 +257,9 @@ def build_long_plan(
         return None
 
     recent = level_candles[-20:]
+    wider = level_candles[-40:] if len(level_candles) >= 40 else level_candles
     recent_high = max(candle.high for candle in recent)
+    wider_high = max(candle.high for candle in wider)
     swing_low = min(candle.low for candle in level_candles[-8:])
     structural = swing_low * 0.998
     atr_stop = entry - volatility * 1.5
@@ -271,34 +277,70 @@ def build_long_plan(
     if risk <= 0:
         return None
 
-    take_profit_1 = entry + risk * target_rr
-    take_profit_2 = entry + risk * max(target_rr + 1.0, 3.0)
-    if recent_high > entry:
-        take_profit_2 = max(take_profit_1, min(take_profit_2, recent_high * 1.02))
-    if take_profit_2 < take_profit_1:
-        take_profit_2 = take_profit_1
+    impulse = max(recent_high - swing_low, risk)
+    fib_1272 = swing_low + impulse * 1.272
+    fib_1618 = swing_low + impulse * 1.618
+    atr_tp1 = entry + volatility * 2.0
+    atr_tp2 = entry + volatility * 3.5
+    rr_floor = entry + risk * (min_rr + 0.05)
+    rr_target = entry + risk * target_rr
+    rr3 = entry + risk * 3.0
+
+    tp1_candidates: list[tuple[float, str]] = []
+    if recent_high > entry * 1.001:
+        tp1_candidates.append((recent_high, "近20根高位"))
+    if fib_1272 > entry * 1.001:
+        tp1_candidates.append((fib_1272, "Fib 1.272 延伸"))
+    if atr_tp1 > entry * 1.001:
+        tp1_candidates.append((atr_tp1, "ATR×2"))
+    tp1_candidates.append((rr_target, f"目標 R/R {target_rr}"))
+    tp1_candidates.append((rr_floor, f"最低 R/R {min_rr}+"))
+
+    take_profit_1 = None
+    tp1_basis = ""
+    for price, basis in sorted(tp1_candidates, key=lambda item: item[0]):
+        if (price - entry) / risk > min_rr:
+            take_profit_1 = price
+            tp1_basis = basis
+            break
+    if take_profit_1 is None:
+        needed_risk = (rr_target - entry) / target_rr
+        tighter = entry - needed_risk
+        if tighter > stop_loss and tighter < entry and tighter >= risk_floor:
+            stop_loss = tighter
+            risk = entry - stop_loss
+            take_profit_1 = entry + risk * target_rr
+            tp1_basis = f"收窄SL後 R/R {target_rr}"
+        else:
+            take_profit_1 = entry + risk * target_rr
+            tp1_basis = f"目標 R/R {target_rr}"
+            if (take_profit_1 - entry) / risk <= min_rr:
+                return None
 
     reward = take_profit_1 - entry
     risk_reward = reward / risk if risk > 0 else 0.0
     if risk_reward <= min_rr:
-        needed_risk = reward / target_rr if reward > 0 else risk
-        tighter = entry - needed_risk
-        if tighter <= stop_loss or tighter >= entry:
-            return None
-        if tighter < risk_floor:
-            take_profit_1 = entry + risk * target_rr
-            take_profit_2 = max(take_profit_1, entry + risk * (target_rr + 1.0))
-        else:
-            stop_loss = tighter
-            risk = entry - stop_loss
-            take_profit_1 = entry + risk * target_rr
-            take_profit_2 = entry + risk * max(target_rr + 1.0, 3.0)
-        reward = take_profit_1 - entry
-        risk_reward = reward / risk if risk > 0 else 0.0
-
-    if risk <= 0 or risk_reward <= min_rr:
         return None
 
+    tp2_candidates: list[tuple[float, str]] = []
+    if wider_high > take_profit_1 * 1.002:
+        tp2_candidates.append((wider_high, "近40根高位"))
+    if recent_high * 1.02 > take_profit_1 * 1.002:
+        tp2_candidates.append((recent_high * 1.02, "近高×1.02"))
+    if fib_1618 > take_profit_1 * 1.002:
+        tp2_candidates.append((fib_1618, "Fib 1.618 延伸"))
+    if atr_tp2 > take_profit_1 * 1.002:
+        tp2_candidates.append((atr_tp2, "ATR×3.5"))
+    if rr3 > take_profit_1 * 1.002:
+        tp2_candidates.append((rr3, "R/R 3.0"))
+    tp2_candidates.append((take_profit_1 + risk, "TP1+1R"))
+
+    take_profit_2, tp2_basis = min(tp2_candidates, key=lambda item: item[0])
+    if take_profit_2 <= take_profit_1:
+        take_profit_2 = take_profit_1 + risk
+        tp2_basis = "TP1+1R"
+
+    reward_2 = take_profit_2 - entry
     return LongPlan(
         entry=entry,
         stop_loss=stop_loss,
@@ -308,6 +350,10 @@ def build_long_plan(
         risk_reward=round(risk_reward, 2),
         risk_pct=round((risk / entry) * 100.0, 2),
         reward_pct=round((reward / entry) * 100.0, 2),
+        tp1_basis=tp1_basis,
+        tp2_basis=tp2_basis,
+        risk_reward_2=round(reward_2 / risk, 2),
+        reward_pct_2=round((reward_2 / entry) * 100.0, 2),
     )
 
 
@@ -571,12 +617,15 @@ def _pct(entry: float, price: float) -> float:
 
 def _plan_lines(plan: LongPlan) -> str:
     label = "建議買入（等回拉）" if plan.wait_pullback else "建議買入"
+    tp1_tag = f"（{plan.tp1_basis}）" if plan.tp1_basis else ""
+    tp2_tag = f"（{plan.tp2_basis}）" if plan.tp2_basis else ""
     return (
         f"   {label}: {format_price(plan.entry)}\n"
         f"   SL: {format_price(plan.stop_loss)} ({_pct(plan.entry, plan.stop_loss):+.2f}%)\n"
-        f"   TP1: {format_price(plan.take_profit_1)} ({_pct(plan.entry, plan.take_profit_1):+.2f}%) | "
-        f"TP2: {format_price(plan.take_profit_2)} ({_pct(plan.entry, plan.take_profit_2):+.2f}%)\n"
-        f"   R/R {plan.risk_reward} · 風險 {plan.risk_pct}% · 目標 +{plan.reward_pct}%"
+        f"   TP1{tp1_tag}: {format_price(plan.take_profit_1)} ({_pct(plan.entry, plan.take_profit_1):+.2f}%)\n"
+        f"   TP2{tp2_tag}: {format_price(plan.take_profit_2)} ({_pct(plan.entry, plan.take_profit_2):+.2f}%)\n"
+        f"   R/R {plan.risk_reward}→{plan.risk_reward_2} · 風險 {plan.risk_pct}% · "
+        f"目標 +{plan.reward_pct}% / +{plan.reward_pct_2}%"
     )
 
 
