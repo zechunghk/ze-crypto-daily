@@ -80,16 +80,16 @@ class SwingRow:
 
 
 def configured_top(override: int | None = None) -> int:
-    """同網頁版一樣，只掃 10–40 隻，避免打爆 Binance。"""
+    """同網頁版一樣，預設掃成交額最高 100 隻。"""
     if override is None:
-        raw = os.getenv("RSI_TOP", "30").strip()
+        raw = os.getenv("RSI_TOP", "100").strip()
         try:
             top = int(raw)
         except ValueError:
-            return 30
+            return 100
     else:
         top = override
-    return min(40, max(10, top))
+    return min(100, max(20, top))
 
 
 def rsi(closes: list[float], period: int = 14) -> float | None:
@@ -479,9 +479,10 @@ def daily_trend_up(closes: list[float]) -> bool:
 
 
 def grade_swing(rsi_4h: float, daily_volume_ratio: float) -> str | None:
+    """同日內力度規則：RSI≥50 先入；A 要 RSI≥60 且量比≥1.5。"""
     if rsi_4h < 50:
         return None
-    if rsi_4h >= 60 and daily_volume_ratio >= 1.2:
+    if rsi_4h >= 60 and daily_volume_ratio >= 1.5:
         return "A"
     return "B"
 
@@ -528,12 +529,12 @@ def analyse_swing(symbol: str) -> SwingRow | None:
     grade = grade_swing(rsi_4h, daily_volume)
     if grade is None or "剔除" in note:
         return None
-    if second_signal and daily_volume < 1.2:
+    if second_signal and daily_volume < 1.3:
         note = "回拉後企穩，但日線量未放大，縮注或者再確認"
     elif grade == "B" and rsi_4h >= 60:
         note = f"{note}；力度有但日線量未放大，降做B"
 
-    plan = build_long_plan(four_hour, four_closes[-1], second_signal, 0.12)
+    plan = build_long_plan(four_hour, four_closes[-1], second_signal, 0.08)
     if plan is None:
         return None
 
@@ -667,7 +668,7 @@ def format_swing_alert(rows: list[SwingRow], scanned: int) -> str:
     lines = [
         f"波段 RSI 觀察  {now} HKT",
         f"掃描成交額最高 {scanned} 隻，過關 {len(rows)} 隻。",
-        "條件：日線RSI>=50、日線同4小時向上。A＝4小時RSI>=60 且日線量比>=1.2。",
+        "條件：日線RSI>=50、日線同4小時向上。A＝4小時RSI>=60 且日線量比>=1.5（同日內門檻）。",
         "買入/SL/TP 係參考位。第二次訊號先用現價，否則等回拉到 4 小時 EMA20。",
         "觀察名單，唔係買賣指令。",
         "",
@@ -712,7 +713,8 @@ def self_test() -> None:
     assert grade_bar(45, 3.0) is None
     assert daily_trend_up(rising[-30:])
     assert not daily_trend_up(falling[-30:])
-    assert grade_swing(64, 1.3) == "A"
+    assert grade_swing(64, 1.5) == "A"
+    assert grade_swing(64, 1.4) == "B"
     assert grade_swing(64, 1.0) == "B"
     assert grade_swing(45, 2.0) is None
     assert swing_note(second)[1] is True
