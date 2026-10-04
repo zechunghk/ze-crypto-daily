@@ -3,7 +3,7 @@
 --mode both   兩份都發（手動預設）
 --mode day    只發日內
 --mode swing  只發波段
---mode auto   每次發日內；香港時間 08:00 先加發波段（Railway cron 用）
+--mode auto   跟網頁掃描：09:40／20:40 發日內，08:05／14:05／20:05 發波段
 """
 
 from __future__ import annotations
@@ -29,9 +29,13 @@ def _modes(mode: str) -> list[str]:
     if mode == "both":
         return ["day", "swing"]
     if mode == "auto":
-        if datetime.now(HK).hour == 8:
-            return ["day", "swing"]
-        return ["day"]
+        # 網頁 09:35、20:35 掃日內，08:00、14:00、20:00 掃波段。遲 5 分鐘先讀同一份快取。
+        now = datetime.now(HK)
+        if now.minute >= 35 and now.hour in {9, 20}:
+            return ["day"]
+        if 5 <= now.minute < 15 and now.hour in {8, 14, 20}:
+            return ["swing"]
+        return []
     return [mode]
 
 
@@ -69,8 +73,13 @@ def main() -> int:
         print("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID in .env")
         return 1
 
+    modes = _modes(args.mode)
+    if not modes:
+        print("呢個鐘點唔發。")
+        return 0
+
     failures = 0
-    for mode in _modes(args.mode):
+    for mode in modes:
         print(f"Scanning RSI {mode}...")
         try:
             text = _build(mode, args.top)

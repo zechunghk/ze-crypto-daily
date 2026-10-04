@@ -63,7 +63,8 @@ class ScanRow:
     grade: str
     note: str
     second_signal: bool
-    plan: LongPlan
+    plan: LongPlan | None
+    rank: str
 
 
 @dataclass(frozen=True)
@@ -76,7 +77,8 @@ class SwingRow:
     grade: str
     note: str
     second_signal: bool
-    plan: LongPlan
+    plan: LongPlan | None
+    rank: str
 
 
 def configured_top(override: int | None = None) -> int:
@@ -181,6 +183,22 @@ def session_note(rsi_values: list[float]) -> tuple[str, bool]:
     if 50 <= current < 54:
         return "回到50附近，再睇會唔會企返", False
     return "觀察中", False
+
+
+def day_rank(
+    listed: bool,
+    grade: str | None,
+    second_signal: bool,
+    plan: LongPlan | None,
+) -> str:
+    """同網頁：過關先 B 以上；第二次訊號 + A + 有倉位先係 S。"""
+    if not listed:
+        return "C"
+    if second_signal and grade == "A" and plan is not None:
+        return "S"
+    if grade == "A":
+        return "A"
+    return "B"
 
 
 def grade_bar(rsi_15m: float, rel_volume: float) -> str | None:
@@ -452,8 +470,6 @@ def analyse(symbol: str) -> ScanRow | None:
         note = f"{note}；力度有但量未放大，降做B"
 
     plan = build_long_plan(closed_candles(hourly), quarter_closes[-1], second_signal, 0.08)
-    if plan is None:
-        return None
 
     return ScanRow(
         symbol=symbol.removesuffix("USDT"),
@@ -466,6 +482,7 @@ def analyse(symbol: str) -> ScanRow | None:
         note=note,
         second_signal=second_signal,
         plan=plan,
+        rank=day_rank(True, grade, second_signal, plan),
     )
 
 
@@ -531,12 +548,12 @@ def analyse_swing(symbol: str) -> SwingRow | None:
         return None
     if second_signal and daily_volume < 1.3:
         note = "回拉後企穩，但日線量未放大，縮注或者再確認"
+    elif second_signal:
+        note = "回拉後企穩，量跟得上"
     elif grade == "B" and rsi_4h >= 60:
         note = f"{note}；力度有但日線量未放大，降做B"
 
     plan = build_long_plan(four_hour, four_closes[-1], second_signal, 0.08)
-    if plan is None:
-        return None
 
     return SwingRow(
         symbol=symbol.removesuffix("USDT"),
@@ -548,6 +565,7 @@ def analyse_swing(symbol: str) -> SwingRow | None:
         note=note,
         second_signal=second_signal,
         plan=plan,
+        rank=day_rank(True, grade, second_signal, plan),
     )
 
 
@@ -565,7 +583,7 @@ def scan(limit: int, workers: int = 6) -> tuple[list[ScanRow], int]:
                 continue
             if row is not None:
                 rows.append(row)
-    rows.sort(key=lambda row: (not row.second_signal, row.grade != "A", -row.rsi_15m))
+    rows.sort(key=lambda row: ({"S": 0, "A": 1, "B": 2}.get(row.rank, 9), not row.second_signal, -row.rsi_15m))
     return rows, len(symbols)
 
 
@@ -583,7 +601,7 @@ def scan_swing(limit: int, workers: int = 6) -> tuple[list[SwingRow], int]:
                 continue
             if row is not None:
                 rows.append(row)
-    rows.sort(key=lambda row: (not row.second_signal, row.grade != "A", -row.rsi_4h))
+    rows.sort(key=lambda row: ({"S": 0, "A": 1, "B": 2}.get(row.rank, 9), not row.second_signal, -row.rsi_4h))
     return rows, len(symbols)
 
 
@@ -595,11 +613,17 @@ def format_price(price: float) -> str:
     return f"{price:.6f}"
 
 
-def _format_rows(rows: list[ScanRow] | list[SwingRow], line_for_row) -> list[str]:
+def _is_second_signal(row) -> bool:
+    if isinstance(row, dict):
+        return bool(row.get("second_signal"))
+    return bool(row.second_signal)
+
+
+def _format_rows(rows, line_for_row) -> list[str]:
     if not rows:
         return ["今次冇標的過關。"]
-    signal_rows = [row for row in rows if row.second_signal]
-    watch_rows = [row for row in rows if not row.second_signal]
+    signal_rows = [row for row in rows if _is_second_signal(row)]
+    watch_rows = [row for row in rows if not _is_second_signal(row)]
     lines = [f"第二次訊號：{len(signal_rows)} 隻"]
     if signal_rows:
         lines.extend(line_for_row(row) for row in signal_rows)
@@ -616,7 +640,9 @@ def _pct(entry: float, price: float) -> float:
     return ((price - entry) / entry) * 100.0
 
 
-def _plan_lines(plan: LongPlan) -> str:
+def _plan_lines(plan: LongPlan | None) -> str:
+    if plan is None:
+        return "   暫無建議倉位"
     label = "建議買入（等回拉）" if plan.wait_pullback else "建議買入"
     tp1_tag = f"（{plan.tp1_basis}）" if plan.tp1_basis else ""
     tp2_tag = f"（{plan.tp2_basis}）" if plan.tp2_basis else ""
@@ -632,7 +658,7 @@ def _plan_lines(plan: LongPlan) -> str:
 
 def _day_line(row: ScanRow) -> str:
     return (
-        f"{row.symbol}  {row.grade}級  ${format_price(row.last_price)}\n"
+        f"{row.symbol}  {row.rank}  ${format_price(row.last_price)}\n"
         f"   日RSI {row.daily_rsi:.1f} | 1h {row.hourly_rsi:.1f} | "
         f"15m {row.rsi_15m:.1f} | 量比 {row.volume_ratio:.2f}\n"
         f"   {row.note}\n"
@@ -642,7 +668,7 @@ def _day_line(row: ScanRow) -> str:
 
 def _swing_line(row: SwingRow) -> str:
     return (
-        f"{row.symbol}  {row.grade}級  ${format_price(row.last_price)}\n"
+        f"{row.symbol}  {row.rank}  ${format_price(row.last_price)}\n"
         f"   日RSI {row.daily_rsi:.1f} | 4h {row.rsi_4h:.1f} | 量比 {row.volume_ratio:.2f}\n"
         f"   {row.note}\n"
         f"{_plan_lines(row.plan)}"
@@ -677,16 +703,116 @@ def format_swing_alert(rows: list[SwingRow], scanned: int) -> str:
     return "\n".join(lines)
 
 
+def watchlist_base() -> str:
+    return os.getenv(
+        "WATCHLIST_URL",
+        "https://rsi-crypto-watchlist-production.up.railway.app",
+    ).rstrip("/")
+
+
+def fetch_site_scan(kind: str, top: int) -> dict:
+    """讀網頁正在顯示嘅同一份快取，避免 Telegram 另計一份。"""
+    path = "watchlist" if kind == "day" else "swing"
+    payload = fetch_json(f"{watchlist_base()}/api/{path}?top={top}", timeout=25, attempts=2)
+    if not isinstance(payload, dict) or not isinstance(payload.get("rows"), list):
+        raise RuntimeError("網頁名單格式唔啱")
+    return payload
+
+
+def _listed_site_rows(payload: dict) -> list[dict]:
+    return [row for row in payload["rows"] if row.get("listed")]
+
+
+def _api_plan_lines(plan: dict | None) -> str:
+    if not plan:
+        return "   暫無建議倉位"
+    label = "建議買入（等回拉）" if plan.get("wait_pullback") else "建議買入"
+    tp1_tag = f"（{plan.get('tp1_basis')}）" if plan.get("tp1_basis") else ""
+    tp2_tag = f"（{plan.get('tp2_basis')}）" if plan.get("tp2_basis") else ""
+    entry = float(plan["entry"])
+    stop_loss = float(plan["stop_loss"])
+    take_profit_1 = float(plan["take_profit_1"])
+    take_profit_2 = float(plan["take_profit_2"])
+    return (
+        f"   {label}: {plan.get('entry_text') or format_price(entry)}\n"
+        f"   SL: {plan.get('stop_loss_text') or format_price(stop_loss)} "
+        f"({_pct(entry, stop_loss):+.2f}%)\n"
+        f"   TP1{tp1_tag}: {plan.get('take_profit_1_text') or format_price(take_profit_1)} "
+        f"({_pct(entry, take_profit_1):+.2f}%)\n"
+        f"   TP2{tp2_tag}: {plan.get('take_profit_2_text') or format_price(take_profit_2)} "
+        f"({_pct(entry, take_profit_2):+.2f}%)\n"
+        f"   R/R {plan.get('risk_reward')}→{plan.get('risk_reward_2')} · "
+        f"風險 {plan.get('risk_pct')}% · "
+        f"目標 +{plan.get('reward_pct')}% / +{plan.get('reward_pct_2')}%"
+    )
+
+
+def _site_day_line(row: dict) -> str:
+    return (
+        f"{row['symbol']}  {row.get('rank') or row.get('grade')}  ${row.get('price_text')}\n"
+        f"   日RSI {float(row['daily_rsi']):.1f} | 1h {float(row['hourly_rsi']):.1f} | "
+        f"15m {float(row['rsi_15m']):.1f} | 量比 {float(row['volume_ratio']):.2f}\n"
+        f"   {row.get('note') or ''}\n"
+        f"{_api_plan_lines(row.get('plan'))}"
+    )
+
+
+def _site_swing_line(row: dict) -> str:
+    return (
+        f"{row['symbol']}  {row.get('rank') or row.get('grade')}  ${row.get('price_text')}\n"
+        f"   日RSI {float(row['daily_rsi']):.1f} | 4h {float(row['rsi_4h']):.1f} | "
+        f"量比 {float(row['volume_ratio']):.2f}\n"
+        f"   {row.get('note') or ''}\n"
+        f"{_api_plan_lines(row.get('plan'))}"
+    )
+
+
+def format_day_from_site(payload: dict) -> str:
+    rows = _listed_site_rows(payload)
+    when = payload.get("generated_at") or datetime.now(HK).strftime("%Y-%m-%d %H:%M")
+    lines = [
+        f"日內 RSI 觀察  {when} HKT",
+        f"同網頁同一份。掃描 {payload.get('scanned')} 隻，過關 {len(rows)} 隻。未過關（C）唔發。",
+        "條件：日線RSI>=50、1小時向上、15分RSI>=50。A＝15分RSI>=60 且量比>=1.5。",
+        "S＝第二次訊號 + A + 有倉位。觀察名單，唔係買賣指令。",
+        "",
+    ]
+    lines.extend(_format_rows(rows, _site_day_line))
+    return "\n".join(lines)
+
+
+def format_swing_from_site(payload: dict) -> str:
+    rows = _listed_site_rows(payload)
+    when = payload.get("generated_at") or datetime.now(HK).strftime("%Y-%m-%d %H:%M")
+    lines = [
+        f"波段 RSI 觀察  {when} HKT",
+        f"同網頁同一份。掃描 {payload.get('scanned')} 隻，過關 {len(rows)} 隻。未過關（C）唔發。",
+        "條件：日線RSI>=50、日線同4小時向上。A＝4小時RSI>=60 且日線量比>=1.5。",
+        "S＝第二次訊號 + A + 有倉位。觀察名單，唔係買賣指令。",
+        "",
+    ]
+    lines.extend(_format_rows(rows, _site_swing_line))
+    return "\n".join(lines)
+
+
 def build_day_alert(top: int | None = None) -> str:
     limit = configured_top(top)
-    rows, scanned = scan(limit)
-    return format_day_alert(rows, scanned)
+    try:
+        return format_day_from_site(fetch_site_scan("day", limit))
+    except Exception as error:
+        print(f"網頁快取攞唔到，改用本地計算：{error}", file=sys.stderr)
+        rows, scanned = scan(limit)
+        return format_day_alert(rows, scanned)
 
 
 def build_swing_alert(top: int | None = None) -> str:
     limit = configured_top(top)
-    rows, scanned = scan_swing(limit)
-    return format_swing_alert(rows, scanned)
+    try:
+        return format_swing_from_site(fetch_site_scan("swing", limit))
+    except Exception as error:
+        print(f"網頁快取攞唔到，改用本地計算：{error}", file=sys.stderr)
+        rows, scanned = scan_swing(limit)
+        return format_swing_alert(rows, scanned)
 
 
 def self_test() -> None:

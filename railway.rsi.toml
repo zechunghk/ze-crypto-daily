@@ -1,6 +1,11 @@
 # RSI watchlist cron. Railway Config-as-Code path: /railway.rsi.toml
-# 00:00 / 06:00 / 12:00 UTC = 08:00 / 14:00 / 20:00 HKT
-# auto：每次發日內；08:00 HKT 先加發波段
+# 網頁先掃，遲 5 分鐘先發同一份快取。
+# 00:05 UTC = 08:05 HKT 波段
+# 01:40 UTC = 09:40 HKT 日內
+# 06:05 UTC = 14:05 HKT 波段
+# 12:05 UTC = 20:05 HKT 波段
+# 12:40 UTC = 20:40 HKT 日內
+# 其餘鐘點腳本會直接退出。
 # Variables 要有 TELEGRAM_BOT_TOKEN、TELEGRAM_CHAT_ID（同 daily / bot 一樣）
 
 [build]
@@ -8,5 +13,5 @@ builder = "NIXPACKS"
 
 [deploy]
 startCommand = "python rsi_alert.py --mode auto"
-cronSchedule = "0 0,6,12 * * *"
+cronSchedule = "5,40 0,1,6,12 * * *"
 restartPolicyType = "NEVER"
