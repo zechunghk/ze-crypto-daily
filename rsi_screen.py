@@ -14,7 +14,7 @@ import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 
 BINANCE = "https://data-api.binance.vision"
@@ -50,6 +50,8 @@ class LongPlan:
     tp2_basis: str = ""
     risk_reward_2: float = 0.0
     reward_pct_2: float = 0.0
+    resistance_price: float | None = None
+    resistance_rr: float | None = None
 
 
 @dataclass(frozen=True)
@@ -191,10 +193,11 @@ def day_rank(
     second_signal: bool,
     plan: LongPlan | None,
 ) -> str:
-    """同網頁：過關先 B 以上；第二次訊號 + A + 有倉位先係 S。"""
+    """同網頁：S 要第二次訊號、A，同歷史高位有 >2R 空間。"""
     if not listed:
         return "C"
-    if second_signal and grade == "A" and plan is not None:
+    if (second_signal and grade == "A" and plan is not None
+            and plan.resistance_rr is not None and plan.resistance_rr > 2.0):
         return "S"
     if grade == "A":
         return "A"
@@ -358,6 +361,9 @@ def build_long_plan(
         take_profit_2 = take_profit_1 + risk
         tp2_basis = "TP1+1R"
 
+    resistance_levels = [price for price in (recent_high, wider_high) if price > entry]
+    resistance_price = min(resistance_levels) if resistance_levels else None
+    resistance_rr = (resistance_price - entry) / risk if resistance_price else None
     reward_2 = take_profit_2 - entry
     return LongPlan(
         entry=entry,
@@ -372,6 +378,8 @@ def build_long_plan(
         tp2_basis=tp2_basis,
         risk_reward_2=round(reward_2 / risk, 2),
         reward_pct_2=round((reward_2 / entry) * 100.0, 2),
+        resistance_price=resistance_price,
+        resistance_rr=round(resistance_rr, 2) if resistance_rr is not None else None,
     )
 
 
@@ -437,7 +445,7 @@ def fetch_klines(symbol: str, interval: str, limit: int) -> list[Candle]:
 
 def analyse(symbol: str) -> ScanRow | None:
     daily = closed_candles(fetch_klines(symbol, "1d", 120))
-    hourly = fetch_klines(symbol, "1h", 120)
+    hourly = closed_candles(fetch_klines(symbol, "1h", 120))
     quarter = closed_candles(fetch_klines(symbol, "15m", 120))
     if len(daily) < 20 or len(hourly) < 30 or len(quarter) < 40:
         return None
@@ -469,7 +477,7 @@ def analyse(symbol: str) -> ScanRow | None:
     elif grade == "B" and rsi_15m >= 60:
         note = f"{note}；力度有但量未放大，降做B"
 
-    plan = build_long_plan(closed_candles(hourly), quarter_closes[-1], second_signal, 0.08)
+    plan = build_long_plan(hourly, quarter_closes[-1], second_signal, 0.08)
 
     return ScanRow(
         symbol=symbol.removesuffix("USDT"),
@@ -649,7 +657,7 @@ def _format_rows(rows, line_for_row) -> list[str]:
     b_rows = [row for row in rows if _row_rank(row) == "B"]
     lines: list[str] = []
     if s_rows:
-        lines.append(f"S（第二次訊號 + A）：{len(s_rows)} 隻")
+        lines.append(f"S（第二次訊號 + A + 歷史高位 >2R）：{len(s_rows)} 隻")
         lines.extend(line_for_row(row) for row in s_rows)
     else:
         lines.append("S：暫時冇。")
@@ -680,7 +688,8 @@ def _plan_lines(plan: LongPlan | None) -> str:
         f"   TP1{tp1_tag}: {format_price(plan.take_profit_1)} ({_pct(plan.entry, plan.take_profit_1):+.2f}%)\n"
         f"   TP2{tp2_tag}: {format_price(plan.take_profit_2)} ({_pct(plan.entry, plan.take_profit_2):+.2f}%)\n"
         f"   R/R {plan.risk_reward}→{plan.risk_reward_2} · 風險 {plan.risk_pct}% · "
-        f"目標 +{plan.reward_pct}% / +{plan.reward_pct_2}%"
+        f"目標 +{plan.reward_pct}% / +{plan.reward_pct_2}%\n"
+        f"   歷史高位 R/R: {plan.resistance_rr if plan.resistance_rr is not None else '無近期高位'}"
     )
 
 
@@ -709,8 +718,8 @@ def format_day_alert(rows: list[ScanRow], scanned: int) -> str:
     lines = [
         f"日內 RSI 觀察  {now} HKT",
         f"掃描成交額最高 {scanned} 隻，過關 {len(passed)} 隻。{_rank_counts(passed)}",
-        "只發過關。S＝第二次訊號+力度A；A＝15分RSI>=60且量比>=1.5；B＝其餘過關。",
-        "條件：日線RSI>=50、1小時向上、15分RSI>=50。",
+        "只發過關。A＝15分RSI>=60且量比>=1.5；B＝其餘過關。",
+        "日線RSI>=50、已收1小時向上、15分RSI>=50。S＝第二次訊號 + A + 計劃 + 歷史高位 R/R>2。",
         "買入/SL/TP 係參考位。第二次訊號先用現價，否則等回拉到 1 小時 EMA20。",
         "觀察名單，唔係買賣指令。",
         "",
@@ -725,8 +734,8 @@ def format_swing_alert(rows: list[SwingRow], scanned: int) -> str:
     lines = [
         f"波段 RSI 觀察  {now} HKT",
         f"掃描成交額最高 {scanned} 隻，過關 {len(passed)} 隻。{_rank_counts(passed)}",
-        "只發過關。S＝第二次訊號+力度A；A＝4小時RSI>=60且日線量比>=1.5；B＝其餘過關。",
-        "條件：日線RSI>=50、日線同4小時向上。",
+        "只發過關。A＝4小時RSI>=60且日線量比>=1.5；B＝其餘過關。",
+        "日線RSI>=50、日線同4小時向上。S＝第二次訊號 + A + 計劃 + 歷史高位 R/R>2。",
         "買入/SL/TP 係參考位。第二次訊號先用現價，否則等回拉到 4 小時 EMA20。",
         "觀察名單，唔係買賣指令。",
         "",
@@ -780,7 +789,8 @@ def _api_plan_lines(plan: dict | None) -> str:
         f"({_pct(entry, take_profit_2):+.2f}%)\n"
         f"   R/R {plan.get('risk_reward')}→{plan.get('risk_reward_2')} · "
         f"風險 {plan.get('risk_pct')}% · "
-        f"目標 +{plan.get('reward_pct')}% / +{plan.get('reward_pct_2')}%"
+        f"目標 +{plan.get('reward_pct')}% / +{plan.get('reward_pct_2')}%\n"
+        f"   歷史高位 R/R: {plan.get('resistance_rr') if plan.get('resistance_rr') is not None else '無近期高位'}"
     )
 
 
@@ -810,7 +820,8 @@ def format_day_from_site(payload: dict) -> str:
     lines = [
         f"日內 RSI 觀察  {when} HKT",
         f"同網頁同一份。掃描 {payload.get('scanned')} 隻，過關 {len(rows)} 隻。{_rank_counts(rows)}",
-        "只發過關（C 唔發）。S＝第二次訊號+力度A；A＝15分RSI>=60且量比>=1.5；B＝其餘過關。",
+        "只發過關（C 唔發）。A＝15分RSI>=60且量比>=1.5；B＝其餘過關。",
+        "日線RSI>=50、已收1小時向上、15分RSI>=50。S＝第二次訊號 + A + 計劃 + 歷史高位 R/R>2。",
         "買入/SL/TP 係參考位。觀察名單，唔係買賣指令。",
         "",
     ]
@@ -824,7 +835,8 @@ def format_swing_from_site(payload: dict) -> str:
     lines = [
         f"波段 RSI 觀察  {when} HKT",
         f"同網頁同一份。掃描 {payload.get('scanned')} 隻，過關 {len(rows)} 隻。{_rank_counts(rows)}",
-        "只發過關（C 唔發）。S＝第二次訊號+力度A；A＝4小時RSI>=60且日線量比>=1.5；B＝其餘過關。",
+        "只發過關（C 唔發）。A＝4小時RSI>=60且日線量比>=1.5；B＝其餘過關。",
+        "日線RSI>=50、日線同4小時向上。S＝第二次訊號 + A + 計劃 + 歷史高位 R/R>2。",
         "買入/SL/TP 係參考位。觀察名單，唔係買賣指令。",
         "",
     ]
@@ -898,7 +910,8 @@ def self_test() -> None:
     assert signal.entry == rising_candles[-1].close
     assert signal.stop_loss < signal.entry
     assert signal.risk_reward > 2.0
-    assert day_rank(True, "A", True, signal) == "S"
+    assert day_rank(True, "A", True, signal) == "A"
+    assert day_rank(True, "A", True, replace(signal, resistance_rr=2.5)) == "S"
     assert day_rank(True, "A", False, signal) == "A"
     assert day_rank(True, "B", True, signal) == "B"
     assert day_rank(False, "A", True, signal) == "C"
@@ -910,7 +923,7 @@ def self_test() -> None:
     ]
     ordered = _sort_passed(sample)
     assert [row["rank"] for row in ordered] == ["S", "A", "B"]
-    assert "S（第二次訊號 + A）" in "\n".join(_format_rows(sample, lambda row: row["rank"]))
+    assert "S（第二次訊號 + A + 歷史高位 >2R）" in "\n".join(_format_rows(sample, lambda row: row["rank"]))
     print("self-test ok")
 
 
