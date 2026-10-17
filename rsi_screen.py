@@ -627,21 +627,24 @@ def _row_rank(row) -> str:
     return str(getattr(row, "rank", None) or getattr(row, "grade", "B"))
 
 
+_ALERT_RANKS = frozenset({"S", "A"})
+
+
 def _rank_counts(rows) -> str:
-    counts = {"S": 0, "A": 0, "B": 0}
+    counts = {"S": 0, "A": 0}
     for row in rows:
         rank = _row_rank(row)
         if rank in counts:
             counts[rank] += 1
-    return f"S {counts['S']} · A {counts['A']} · B {counts['B']}"
+    return f"S {counts['S']} · A {counts['A']}"
 
 
 def _sort_passed(rows):
-    """只留 S/A/B，按排名排。"""
-    passed = [row for row in rows if _row_rank(row) in {"S", "A", "B"}]
+    """Telegram 只發 S/A，按排名排。"""
+    passed = [row for row in rows if _row_rank(row) in _ALERT_RANKS]
     passed.sort(
         key=lambda row: (
-            {"S": 0, "A": 1, "B": 2}.get(_row_rank(row), 9),
+            {"S": 0, "A": 1}.get(_row_rank(row), 9),
             not (row.get("second_signal") if isinstance(row, dict) else row.second_signal),
         )
     )
@@ -651,10 +654,9 @@ def _sort_passed(rows):
 def _format_rows(rows, line_for_row) -> list[str]:
     rows = _sort_passed(rows)
     if not rows:
-        return ["今次冇標的過關。"]
+        return ["今次冇 S／A 標的。"]
     s_rows = [row for row in rows if _row_rank(row) == "S"]
     a_rows = [row for row in rows if _row_rank(row) == "A"]
-    b_rows = [row for row in rows if _row_rank(row) == "B"]
     lines: list[str] = []
     if s_rows:
         lines.append(f"S（第二次訊號 + A + 歷史高位 >2R）：{len(s_rows)} 隻")
@@ -665,10 +667,6 @@ def _format_rows(rows, line_for_row) -> list[str]:
         lines.append("")
         lines.append(f"A：{len(a_rows)} 隻")
         lines.extend(line_for_row(row) for row in a_rows)
-    if b_rows:
-        lines.append("")
-        lines.append(f"B：{len(b_rows)} 隻")
-        lines.extend(line_for_row(row) for row in b_rows)
     return lines
 
 
@@ -717,8 +715,8 @@ def format_day_alert(rows: list[ScanRow], scanned: int) -> str:
     now = datetime.now(HK).strftime("%Y-%m-%d %H:%M")
     lines = [
         f"日內 RSI 觀察  {now} HKT",
-        f"掃描成交額最高 {scanned} 隻，過關 {len(passed)} 隻。{_rank_counts(passed)}",
-        "只發過關。A＝15分RSI>=60且量比>=1.5；B＝其餘過關。",
+        f"掃描成交額最高 {scanned} 隻，只發 S／A {len(passed)} 隻。{_rank_counts(passed)}",
+        "只發 S／A（B／C 唔發）。A＝15分RSI>=60且量比>=1.5。",
         "日線RSI>=50、已收1小時向上、15分RSI>=50。S＝第二次訊號 + A + 計劃 + 歷史高位 R/R>2。",
         "買入/SL/TP 係參考位。第二次訊號先用現價，否則等回拉到 1 小時 EMA20。",
         "觀察名單，唔係買賣指令。",
@@ -733,8 +731,8 @@ def format_swing_alert(rows: list[SwingRow], scanned: int) -> str:
     now = datetime.now(HK).strftime("%Y-%m-%d %H:%M")
     lines = [
         f"波段 RSI 觀察  {now} HKT",
-        f"掃描成交額最高 {scanned} 隻，過關 {len(passed)} 隻。{_rank_counts(passed)}",
-        "只發過關。A＝4小時RSI>=60且日線量比>=1.5；B＝其餘過關。",
+        f"掃描成交額最高 {scanned} 隻，只發 S／A {len(passed)} 隻。{_rank_counts(passed)}",
+        "只發 S／A（B／C 唔發）。A＝4小時RSI>=60且日線量比>=1.5。",
         "日線RSI>=50、日線同4小時向上。S＝第二次訊號 + A + 計劃 + 歷史高位 R/R>2。",
         "買入/SL/TP 係參考位。第二次訊號先用現價，否則等回拉到 4 小時 EMA20。",
         "觀察名單，唔係買賣指令。",
@@ -761,10 +759,10 @@ def fetch_site_scan(kind: str, top: int) -> dict:
 
 
 def _listed_site_rows(payload: dict) -> list[dict]:
-    """網頁過關名單；C／未過關唔發。"""
+    """網頁過關名單；Telegram 只發 S／A。"""
     rows = [
         row for row in payload["rows"]
-        if row.get("listed") and str(row.get("rank") or "B") in {"S", "A", "B"}
+        if row.get("listed") and str(row.get("rank") or "") in _ALERT_RANKS
     ]
     return _sort_passed(rows)
 
@@ -819,8 +817,8 @@ def format_day_from_site(payload: dict) -> str:
     when = payload.get("generated_at") or datetime.now(HK).strftime("%Y-%m-%d %H:%M")
     lines = [
         f"日內 RSI 觀察  {when} HKT",
-        f"同網頁同一份。掃描 {payload.get('scanned')} 隻，過關 {len(rows)} 隻。{_rank_counts(rows)}",
-        "只發過關（C 唔發）。A＝15分RSI>=60且量比>=1.5；B＝其餘過關。",
+        f"同網頁同一份。掃描 {payload.get('scanned')} 隻，只發 S／A {len(rows)} 隻。{_rank_counts(rows)}",
+        "只發 S／A（B／C 唔發）。A＝15分RSI>=60且量比>=1.5。",
         "日線RSI>=50、已收1小時向上、15分RSI>=50。S＝第二次訊號 + A + 計劃 + 歷史高位 R/R>2。",
         "買入/SL/TP 係參考位。觀察名單，唔係買賣指令。",
         "",
@@ -834,8 +832,8 @@ def format_swing_from_site(payload: dict) -> str:
     when = payload.get("generated_at") or datetime.now(HK).strftime("%Y-%m-%d %H:%M")
     lines = [
         f"波段 RSI 觀察  {when} HKT",
-        f"同網頁同一份。掃描 {payload.get('scanned')} 隻，過關 {len(rows)} 隻。{_rank_counts(rows)}",
-        "只發過關（C 唔發）。A＝4小時RSI>=60且日線量比>=1.5；B＝其餘過關。",
+        f"同網頁同一份。掃描 {payload.get('scanned')} 隻，只發 S／A {len(rows)} 隻。{_rank_counts(rows)}",
+        "只發 S／A（B／C 唔發）。A＝4小時RSI>=60且日線量比>=1.5。",
         "日線RSI>=50、日線同4小時向上。S＝第二次訊號 + A + 計劃 + 歷史高位 R/R>2。",
         "買入/SL/TP 係參考位。觀察名單，唔係買賣指令。",
         "",
@@ -922,8 +920,11 @@ def self_test() -> None:
         {"rank": "C", "second_signal": False},
     ]
     ordered = _sort_passed(sample)
-    assert [row["rank"] for row in ordered] == ["S", "A", "B"]
-    assert "S（第二次訊號 + A + 歷史高位 >2R）" in "\n".join(_format_rows(sample, lambda row: row["rank"]))
+    assert [row["rank"] for row in ordered] == ["S", "A"]
+    formatted = "\n".join(_format_rows(sample, lambda row: row["rank"]))
+    assert "S（第二次訊號 + A + 歷史高位 >2R）" in formatted
+    assert "\nB：" not in f"\n{formatted}"
+    assert _rank_counts(ordered) == "S 1 · A 1"
     print("self-test ok")
 
 
